@@ -77,11 +77,7 @@ class UpdateService {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
 
-      final url = Uri.parse(
-        'https://api.github.com/repos/$targetOwner/$targetRepo/releases/latest',
-      );
-
-      final response = await http.get(
+      var response = await http.get(
         url,
         headers: {
           'Accept': 'application/vnd.github.v3+json',
@@ -89,14 +85,47 @@ class UpdateService {
         },
       ).timeout(const Duration(seconds: 10));
 
-      if (response.statusCode != 200) {
+      Map<String, dynamic>? json;
+
+      if (response.statusCode == 200) {
+        json = jsonDecode(response.body);
+      } else if (response.statusCode == 404) {
+        // Пробуем эндпоинт списка релизов /releases (если релиз помечен как pre-release или drafts)
+        final fallbackUrl = Uri.parse(
+          'https://api.github.com/repos/$targetOwner/$targetRepo/releases',
+        );
+        final fallbackResponse = await http.get(
+          fallbackUrl,
+          headers: {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'SesMusicApp/${packageInfo.version}',
+          },
+        ).timeout(const Duration(seconds: 10));
+
+        if (fallbackResponse.statusCode == 200) {
+          final List<dynamic> releases = jsonDecode(fallbackResponse.body);
+          if (releases.isNotEmpty) {
+            json = releases.first as Map<String, dynamic>;
+          }
+        } else {
+          if (kDebugMode) {
+            print(
+              'GitHub Release Check status: 404 (Релиз не опубликован или репозиторий Private).\n'
+              'Чтобы автообновление работало:\n'
+              '1. Опубликуйте релиз на GitHub (нажмите "Publish release").\n'
+              '2. Если репозиторий Private, сделайте его Public в GitHub -> Settings -> Danger Zone -> Make public.',
+            );
+          }
+          return null;
+        }
+      } else {
         if (kDebugMode) {
           print('GitHub Release Check status: ${response.statusCode}');
         }
         return null;
       }
 
-      final Map<String, dynamic> json = jsonDecode(response.body);
+      if (json == null) return null;
 
       // Извлекаем тег (например: "v1.0.2" или "1.0.2")
       final tagName = (json['tag_name'] as String? ?? '').trim();
