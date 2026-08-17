@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "661792780030",
+    "project_id": "sesmusic-e02aa",
+    "storage_bucket": "sesmusic-e02aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:661792780030:android:cf3cb2efad543d19c2bfaf",
+        "android_client_info": {
+          "package_name": "com.example.ses"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "661792780030-pjb7c98v7o112jvod77mn2krufh513op.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcuNLQlk6d4k6kc78h42u-0Sw5Kk2zVm0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "661792780030-pjb7c98v7o112jvod77mn2krufh513op.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
