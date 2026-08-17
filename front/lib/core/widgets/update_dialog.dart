@@ -136,12 +136,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
           color: const Color(0xFF1C1C1E),
           borderRadius: BorderRadius.circular(28),
           border: Border.all(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 0.5),
               blurRadius: 30,
               spreadRadius: 5,
             ),
@@ -159,7 +159,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: AppColors.accentBlue.withOpacity(0.15),
+                    color: AppColors.accentBlue.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Icon(
@@ -227,9 +227,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
             Container(
               maxHeight: 180,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.04),
+                color: Colors.white.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.04)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
               ),
               padding: const EdgeInsets.all(14),
               child: SingleChildScrollView(
