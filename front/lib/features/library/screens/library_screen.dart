@@ -19,6 +19,7 @@ import 'package:ses/features/library/screens/recent_playlists_screen.dart';
 import 'package:ses/features/library/screens/settings_screen.dart';
 import 'package:ses/features/import_export/services/soundcloud_service.dart';
 import 'package:ses/features/library/screens/artist_detail_screen.dart';
+import 'package:ses/features/library/screens/artists_screen.dart';
 
 
 final List<Song> searchRecommendations = [
@@ -320,7 +321,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       children: [
         // ── QUICK NAVIGATION ──
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               _QuickAction(
@@ -329,19 +330,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 count: user.likedSongs.length,
                 onTap: () => Navigator.push(context, AppPageRoute.create(context, const LikedSongsScreen())),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _QuickAction(
                 icon: AppIcons.playlist,
                 label: "Плейлисты",
                 count: user.playlists.length,
                 onTap: () => Navigator.push(context, AppPageRoute.create(context, const PlaylistsScreen())),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _QuickAction(
                 icon: AppIcons.download,
                 label: "Офлайн",
                 count: user.downloadedSongs.length,
                 onTap: () => Navigator.push(context, AppPageRoute.create(context, const DownloadsScreen())),
+              ),
+              const SizedBox(width: 6),
+              _QuickAction(
+                icon: Iconsax.profile_2user_copy,
+                label: "Подписки",
+                count: user.followedArtists.length,
+                onTap: () => Navigator.push(context, AppPageRoute.create(context, const ArtistsScreen())),
               ),
             ],
           ),
@@ -1226,28 +1234,28 @@ class _QuickAction extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          height: 105,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          height: 98,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           decoration: BoxDecoration(
-            color: AppColors.surface.withOpacity(0.4),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.02)),
+            color: AppColors.surface.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.02)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: Colors.white, size: 22),
+              Icon(icon, color: Colors.white, size: 20),
               const Spacer(),
               Text(
                 label,
-                style: AppText.trackTitle.copyWith(fontSize: 13, fontWeight: FontWeight.bold),
+                style: AppText.trackTitle.copyWith(fontSize: 11, fontWeight: FontWeight.bold),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
               Text(
                 "$count объектов",
-                style: AppText.trackArtist.copyWith(fontSize: 11, color: Colors.white38),
+                style: AppText.trackArtist.copyWith(fontSize: 10, color: Colors.white38),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
