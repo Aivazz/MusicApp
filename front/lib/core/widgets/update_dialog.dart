@@ -59,26 +59,28 @@ class _UpdateDialogState extends State<UpdateDialog> {
           if (!mounted) return;
           setState(() {
             switch (event.status) {
-              case OtaStatus.DOWNLOADING:
+              case OtaStatus.downloading:
                 _progress = (double.tryParse(event.value ?? '0') ?? 0) / 100.0;
                 _statusText = 'Загрузка: ${(double.tryParse(event.value ?? '0') ?? 0).toInt()}%';
                 break;
-              case OtaStatus.INSTALLING:
+              case OtaStatus.installing:
                 _progress = 1.0;
                 _statusText = 'Запуск установки...';
                 break;
-              case OtaStatus.ALREADY_RUNNING_ERROR:
+              case OtaStatus.alreadyRunningError:
                 _statusText = 'Загрузка уже выполняется';
                 break;
-              case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
+              case OtaStatus.permissionNotGrantedError:
                 _statusText = 'Нет разрешения на установку сторонних APK';
                 _showFallbackOption('Не дано разрешение на установку приложений.');
                 break;
-              case OtaStatus.INTERNAL_ERROR:
-              case OtaStatus.DOWNLOAD_ERROR:
-              case OtaStatus.CHECKSUM_ERROR:
+              case OtaStatus.internalError:
+              case OtaStatus.downloadError:
+              case OtaStatus.checksumError:
                 _statusText = 'Ошибка скачивания';
                 _showFallbackOption('Не удалось скачать обновление.');
+                break;
+              default:
                 break;
             }
           });
