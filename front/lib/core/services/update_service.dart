@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -28,11 +29,110 @@ class UpdateInfo {
   });
 }
 
+class UpdateDownloadProgress {
+  final double progress;
+  final String statusText;
+  final bool isDownloading;
+  final bool isReadyToInstall;
+  final String? error;
+
+  UpdateDownloadProgress({
+    required this.progress,
+    required this.statusText,
+    required this.isDownloading,
+    this.isReadyToInstall = false,
+    this.error,
+  });
+}
+
 class UpdateService {
-  // Настройки репозитория GitHub по умолчанию.
-  // Можно переопределить или передать при вызове.
   static String githubOwner = 'Aivazz';
   static String githubRepo = 'MusicApp';
+
+  // Фоновый прогресс скачивания обновления
+  static final ValueNotifier<UpdateDownloadProgress?> downloadNotifier = ValueNotifier(null);
+  static StreamSubscription<OtaEvent>? _activeOtaSubscription;
+  static UpdateInfo? activeUpdateInfo;
+
+  /// Запуск скачивания в фоновом режиме
+  static void startBackgroundDownload(UpdateInfo info) {
+    if (downloadNotifier.value?.isDownloading == true) return;
+    activeUpdateInfo = info;
+    final downloadUrl = info.downloadUrl;
+    if (downloadUrl == null || downloadUrl.isEmpty) return;
+
+    downloadNotifier.value = UpdateDownloadProgress(
+      progress: 0.0,
+      statusText: 'Начало скачивания...',
+      isDownloading: true,
+    );
+
+    try {
+      _activeOtaSubscription?.cancel();
+      _activeOtaSubscription = downloadAndInstallApk(downloadUrl).listen(
+        (event) {
+          double p = downloadNotifier.value?.progress ?? 0.0;
+          String st = '';
+          bool downloading = true;
+          bool ready = false;
+          String? err;
+
+          switch (event.status) {
+            case OtaStatus.DOWNLOADING:
+              p = (double.tryParse(event.value ?? '0') ?? 0) / 100.0;
+              st = 'Загрузка: ${(p * 100).toInt()}%';
+              break;
+            case OtaStatus.INSTALLING:
+              p = 1.0;
+              st = 'Установка обновления...';
+              downloading = false;
+              ready = true;
+              break;
+            case OtaStatus.ALREADY_RUNNING_ERROR:
+              st = 'Загрузка уже выполняется';
+              break;
+            case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
+              st = 'Нет разрешения на установку APK';
+              downloading = false;
+              err = 'Требуется разрешение на установку из неизвестных источников';
+              break;
+            case OtaStatus.INTERNAL_ERROR:
+            case OtaStatus.DOWNLOAD_ERROR:
+            case OtaStatus.CHECKSUM_ERROR:
+              st = 'Ошибка скачивания';
+              downloading = false;
+              err = 'Не удалось скачать файл обновления';
+              break;
+            default:
+              break;
+          }
+
+          downloadNotifier.value = UpdateDownloadProgress(
+            progress: p,
+            statusText: st,
+            isDownloading: downloading,
+            isReadyToInstall: ready,
+            error: err,
+          );
+        },
+        onError: (e) {
+          downloadNotifier.value = UpdateDownloadProgress(
+            progress: 0,
+            statusText: 'Ошибка скачивания',
+            isDownloading: false,
+            error: e.toString(),
+          );
+        },
+      );
+    } catch (e) {
+      downloadNotifier.value = UpdateDownloadProgress(
+        progress: 0,
+        statusText: 'Не удалось начать скачивание',
+        isDownloading: false,
+        error: e.toString(),
+      );
+    }
+  }
 
   /// Возвращает текущую версию приложения (например, "1.0.0")
   static Future<String> getCurrentVersion() async {
@@ -77,6 +177,10 @@ class UpdateService {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
 
+      final url = Uri.parse(
+        'https://api.github.com/repos/$targetOwner/$targetRepo/releases/latest',
+      );
+
       var response = await http.get(
         url,
         headers: {
@@ -90,7 +194,6 @@ class UpdateService {
       if (response.statusCode == 200) {
         json = jsonDecode(response.body);
       } else if (response.statusCode == 404) {
-        // Пробуем эндпоинт списка релизов /releases (если релиз помечен как pre-release или drafts)
         final fallbackUrl = Uri.parse(
           'https://api.github.com/repos/$targetOwner/$targetRepo/releases',
         );
@@ -127,7 +230,6 @@ class UpdateService {
 
       if (json == null) return null;
 
-      // Извлекаем тег (например: "v1.0.2" или "1.0.2")
       final tagName = (json['tag_name'] as String? ?? '').trim();
       final cleanLatestVersion = _cleanVersion(tagName);
       final cleanCurrentVersion = _cleanVersion(currentVersion);
@@ -136,7 +238,6 @@ class UpdateService {
 
       final isNewer = _isVersionNewer(cleanLatestVersion, cleanCurrentVersion);
 
-      // Ищем .apk файл в прикрепленных дистрибутивах (assets)
       String? apkDownloadUrl;
       final assets = json['assets'] as List<dynamic>? ?? [];
       for (final asset in assets) {
@@ -172,7 +273,7 @@ class UpdateService {
     }
   }
 
-  /// Скачивание и установка APK на Android с отслеживанием прогресса
+  /// Скачивание и установка APK на Android с помощью надежного PackageInstaller
   static Stream<OtaEvent> downloadAndInstallApk(String downloadUrl) {
     if (!Platform.isAndroid) {
       throw UnsupportedError('Прямая установка поддерживается только на Android');
@@ -180,10 +281,10 @@ class UpdateService {
     return OtaUpdate().execute(
       downloadUrl,
       destinationFilename: 'ses-music-update.apk',
+      usePackageInstaller: true,
     );
   }
 
-  /// Резервный вариант: открыть страницу релиза или прямую ссылку в браузере
   static Future<bool> openReleasePage(String url) async {
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
@@ -192,7 +293,6 @@ class UpdateService {
     return false;
   }
 
-  /// Очищает строку версии от символов 'v', 'V' и билдов
   static String _cleanVersion(String version) {
     var v = version.trim();
     if (v.startsWith('v') || v.startsWith('V')) {
@@ -204,7 +304,6 @@ class UpdateService {
     return v;
   }
 
-  /// Сравнивает две версии в формате SemVer (например, "1.0.2" и "1.0.0")
   static bool _isVersionNewer(String latest, String current) {
     final latestParts = _parseVersionParts(latest);
     final currentParts = _parseVersionParts(current);
