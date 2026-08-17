@@ -55,7 +55,7 @@ dependencies:
   url_launcher: ^6.3.2
   webview_flutter: ^4.14.0
   package_info_plus: ^8.2.1
-  ota_update: ^6.0.0
+  ota_update: ^7.1.0
 
 dev_dependencies:
   flutter_test:
