@@ -346,7 +346,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               const SizedBox(width: 6),
               _QuickAction(
-                icon: Iconsax.profile_2user_copy,
+                icon: Iconsax.profile_2user,
                 label: "Подписки",
                 count: user.followedArtists.length,
                 onTap: () => Navigator.push(context, AppPageRoute.create(context, const ArtistsScreen())),

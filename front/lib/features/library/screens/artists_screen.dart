@@ -5,6 +5,7 @@ import 'package:ses/core/theme/app_theme.dart';
 import 'package:ses/features/auth/providers/user_provider.dart';
 import 'package:ses/features/player/providers/player_provider.dart';
 import 'package:ses/features/library/screens/artist_detail_screen.dart';
+import 'package:ses/features/library/models/song.dart';
 
 class ArtistsScreen extends StatefulWidget {
   const ArtistsScreen({super.key});
@@ -20,6 +21,98 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _showArtistMenu(BuildContext context, UserProvider user, Song artist) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    ClipOval(
+                      child: AppCover(
+                        url: artist.coverUrl,
+                        size: 48,
+                        radius: 24,
+                        artist: artist.title,
+                        title: artist.title,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        artist.title,
+                        style: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                ListTile(
+                  leading: const Icon(Iconsax.user_search_copy, color: Colors.white),
+                  title: const Text(
+                    "Открыть страницу артиста",
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      AppPageRoute.create(
+                        context,
+                        ArtistDetailScreen(
+                          artistName: artist.title,
+                          artistId: artist.id,
+                          coverUrl: artist.coverUrl,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Iconsax.profile_remove_copy, color: AppColors.accentRed),
+                  title: const Text(
+                    "Отписаться от исполнителя",
+                    style: TextStyle(color: AppColors.accentRed, fontWeight: FontWeight.w600),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    user.toggleFollow(artist.id, artist.title, artist.coverUrl);
+                    AppTheme.showSnackBar(context, 'Вы отписались от ${artist.title}');
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -106,14 +199,20 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
 
             const SizedBox(height: 8),
 
-            // ── LIST ──
+            // ── ARTIST CIRCLE GRID ──
             Expanded(
               child: allArtists.isEmpty
                   ? _buildEmptyState(context)
                   : artists.isEmpty
                       ? _buildNoSearchResults()
-                      : ListView.builder(
-                          padding: EdgeInsets.fromLTRB(20, 4, 20, hasMiniPlayer ? 100 : 20),
+                      : GridView.builder(
+                          padding: EdgeInsets.fromLTRB(20, 12, 20, hasMiniPlayer ? 100 : 20),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 24,
+                            crossAxisSpacing: 16,
+                            childAspectRatio: 0.72,
+                          ),
                           itemCount: artists.length,
                           itemBuilder: (context, index) {
                             final artist = artists[index];
@@ -124,109 +223,61 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
                               builder: (context, value, child) {
                                 return Opacity(
                                   opacity: value,
-                                  child: Transform.translate(
-                                    offset: Offset(0, 15 * (1.0 - value)),
+                                  child: Transform.scale(
+                                    scale: 0.85 + (0.15 * value),
                                     child: child,
                                   ),
                                 );
                               },
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surface.withValues(alpha: 0.4),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.03)),
-                                ),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(20),
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        AppPageRoute.create(
-                                          context,
-                                          ArtistDetailScreen(
-                                            artistName: artist.title,
-                                            artistId: artist.id,
-                                            coverUrl: artist.coverUrl,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                                      child: Row(
-                                        children: [
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(28),
-                                            child: AppCover(
-                                              url: artist.coverUrl,
-                                              size: 56,
-                                              radius: 28,
-                                              artist: artist.title,
-                                              title: artist.title,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 14),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  artist.title,
-                                                  style: AppText.trackTitle.copyWith(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Row(
-                                                  children: [
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: AppColors.accentBlue.withValues(alpha: 0.15),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
-                                                      child: Text(
-                                                        "Исполнитель",
-                                                        style: TextStyle(
-                                                          color: AppColors.accentBlue,
-                                                          fontSize: 10,
-                                                          fontWeight: FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(
-                                              Iconsax.profile_remove_copy,
-                                              color: Colors.white38,
-                                              size: 20,
-                                            ),
-                                            tooltip: "Отписаться",
-                                            onPressed: () {
-                                              user.toggleFollow(artist.id, artist.title, artist.coverUrl);
-                                              AppTheme.showSnackBar(context, 'Вы отписались от ${artist.title}');
-                                            },
-                                          ),
-                                          const Icon(
-                                            Iconsax.arrow_right_3_copy,
-                                            size: 16,
-                                            color: Colors.white24,
-                                          ),
-                                        ],
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    AppPageRoute.create(
+                                      context,
+                                      ArtistDetailScreen(
+                                        artistName: artist.title,
+                                        artistId: artist.id,
+                                        coverUrl: artist.coverUrl,
                                       ),
                                     ),
-                                  ),
+                                  );
+                                },
+                                onLongPress: () => _showArtistMenu(context, user, artist),
+                                child: Column(
+                                  children: [
+                                    AspectRatio(
+                                      aspectRatio: 1.0,
+                                      child: Container(
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: ClipOval(
+                                          child: AppCover(
+                                            url: artist.coverUrl,
+                                            size: double.infinity,
+                                            radius: 1000,
+                                            artist: artist.title,
+                                            title: artist.title,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      artist.title,
+                                      style: const TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                        height: 1.2,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
@@ -274,7 +325,7 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
                 color: AppColors.surface.withValues(alpha: 0.6),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Iconsax.profile_2user_copy, size: 40, color: Colors.white38),
+              child: const Icon(Iconsax.profile_2user, size: 40, color: Colors.white38),
             ),
             const SizedBox(height: 20),
             Text(
