@@ -37,8 +37,8 @@ class _CinemaScreenState extends State<CinemaScreen> {
   bool _hasMore = true;
   String? _latestError;
 
-  // Активная вкладка под поиском
-  String _selectedTabType = "Фильмы";
+  // Показ всех категорий вперемешку
+  String _selectedTabType = "Все";
 
   // Экран поиска
   List<MovieItem> _searchResults = [];
@@ -48,10 +48,7 @@ class _CinemaScreenState extends State<CinemaScreen> {
   @override
   void initState() {
     super.initState();
-    // Загружаем тренды для текущей вкладки (Фильмы)
     _loadTrendingForTab(_selectedTabType);
-    
-    // Загружаем основную сетку фильмов
     _resetAndLoadMovies();
 
     _searchFocusNode.addListener(() {
@@ -69,6 +66,7 @@ class _CinemaScreenState extends State<CinemaScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _scrollController.dispose();
@@ -77,47 +75,24 @@ class _CinemaScreenState extends State<CinemaScreen> {
     super.dispose();
   }
 
-  // Определение основного URL-пути запроса на основе вкладки
   String _determineFetchPath() {
-    if (_selectedTabType == "Фильмы") {
-      return "/film/";
-    } else if (_selectedTabType == "Сериалы") {
-      return "/series/";
-    } else if (_selectedTabType == "Дорамы") {
-      return "/series/korean/";
-    } else if (_selectedTabType == "Аниме") {
-      return "/animeseries/";
-    }
     return "/";
   }
 
   bool _applyFilters(MovieItem item) {
-    // Все вкладки фильтруются на стороне сервера через правильные пути:
-    // /film/, /series/, /series/korean/, /animeseries/
     return true;
   }
 
   Future<void> _loadTrendingForTab(String tab) async {
     try {
-      String trendPath = '/';
-      if (tab == "Фильмы") {
-        trendPath = "/film/";
-      } else if (tab == "Сериалы") {
-        trendPath = "/series/";
-      } else if (tab == "Дорамы") {
-        trendPath = "/series/korean/";
-      } else if (tab == "Аниме") {
-        trendPath = "/animeseries/";
-      }
-      
-      final movies = await KinogoService.fetchMoviesByCategory(trendPath);
+      final movies = await KinogoService.fetchMoviesByCategory('/');
       if (mounted) {
         setState(() {
           _latestMovies = movies;
         });
       }
     } catch (e) {
-      print("Error loading trends for tab $tab: $e");
+      print("Error loading trends: $e");
     }
   }
 
@@ -227,33 +202,66 @@ class _CinemaScreenState extends State<CinemaScreen> {
     }
   }
 
+  Timer? _searchDebounce;
+
   // Выполнение поиска фильмов
   Future<void> _performSearch(String query) async {
-    if (query.trim().isEmpty) return;
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isLoadingSearch = false;
+      });
+      return;
+    }
 
     setState(() {
       _isLoadingSearch = true;
       _searchError = null;
       _isSearchMode = true;
+      _searchResults = [];
     });
 
     try {
-      final results = await KinogoService.searchMovies(query, tabType: _selectedTabType);
-      final filteredResults = results.where(_applyFilters).toList();
+      final results = await KinogoService.searchMovies(cleanQuery);
       if (mounted) {
         setState(() {
-          _searchResults = filteredResults;
+          _searchResults = results;
           _isLoadingSearch = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _searchError = "Не удалось выполнить поиск.";
+          _searchError = "Не удалось выполнить поиск. Проверьте сеть.";
           _isLoadingSearch = false;
         });
       }
     }
+  }
+
+  void _onSearchChanged(String val) {
+    _searchDebounce?.cancel();
+    final cleanVal = val.trim();
+    if (cleanVal.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isLoadingSearch = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoadingSearch = true;
+      _isSearchMode = true;
+      _searchResults = [];
+    });
+
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted && _searchController.text.trim() == cleanVal) {
+        _performSearch(cleanVal);
+      }
+    });
   }
 
   int _getCrossAxisCount(BuildContext context) {
@@ -281,66 +289,128 @@ class _CinemaScreenState extends State<CinemaScreen> {
                       controller: _searchController,
                       focusNode: _searchFocusNode,
                       hint: "Поиск фильмов и сериалов",
+                      onChanged: (val) => _onSearchChanged(val),
                       onSubmitted: (query) => _performSearch(query),
+                      onClear: () {
+                        setState(() {
+                          _searchResults = [];
+                          _isLoadingSearch = false;
+                          _searchError = null;
+                        });
+                      },
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  ScaleButton(
-                    onTap: () {
-                      Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(false);
-                      Navigator.push(
-                        context,
-                        AppPageRoute.create(context, const DownloadedCinemaScreen()),
-                      ).then((_) {
-                        if (context.mounted) {
-                          Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(true);
-                        }
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.03)),
-                      ),
-                      child: Icon(
-                        Iconsax.document_download,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  ScaleButton(
-                    onTap: () async {
-                      Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(false);
-                      await Navigator.push(
-                        context,
-                        AppPageRoute.create(context, const SettingsScreen()),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SizeTransition(
+                          axis: Axis.horizontal,
+                          axisAlignment: -1.0,
+                          sizeFactor: animation,
+                          child: child,
+                        ),
                       );
-                      if (context.mounted) {
-                        Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(true);
-                      }
                     },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white.withOpacity(0.03)),
-                      ),
-                      child: Icon(
-                        AppIcons.settings,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
+                    child: (_isSearchMode || _searchFocusNode.hasFocus)
+                        ? Row(
+                            key: const ValueKey('search_active_cancel'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: 12),
+                              GestureDetector(
+                                onTap: () {
+                                  _searchController.clear();
+                                  _searchFocusNode.unfocus();
+                                  FocusScope.of(context).unfocus();
+                                  setState(() {
+                                    _isSearchMode = false;
+                                    _searchResults = [];
+                                    _isLoadingSearch = false;
+                                    _searchError = null;
+                                  });
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                                  child: Text(
+                                    "Отмена",
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      color: Colors.white70,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            key: const ValueKey('search_idle_buttons'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(width: 12),
+                              ScaleButton(
+                                onTap: () {
+                                  Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(false);
+                                  Navigator.push(
+                                    context,
+                                    AppPageRoute.create(context, const DownloadedCinemaScreen()),
+                                  ).then((_) {
+                                    if (context.mounted) {
+                                      Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(true);
+                                    }
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.white.withOpacity(0.03)),
+                                  ),
+                                  child: Icon(
+                                    Iconsax.document_download,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              ScaleButton(
+                                onTap: () async {
+                                  Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(false);
+                                  await Navigator.push(
+                                    context,
+                                    AppPageRoute.create(context, const SettingsScreen()),
+                                  );
+                                  if (context.mounted) {
+                                    Provider.of<PlayerProvider>(context, listen: false).setShowMiniPlayer(true);
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.white.withOpacity(0.03)),
+                                  ),
+                                  child: Icon(
+                                    AppIcons.settings,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                 ],
               ),
             ),
-            if (!_isSearchMode) _buildMediaTabs(),
 
             // ── CONTENT ──
             Expanded(
@@ -358,7 +428,7 @@ class _CinemaScreenState extends State<CinemaScreen> {
   }
 
   String get _currentFilterTitle {
-    return "Все новинки";
+    return "Новинки и тренды";
   }
 
   Widget _buildMainContent() {
@@ -551,6 +621,7 @@ class _CinemaScreenState extends State<CinemaScreen> {
                         Positioned.fill(
                           child: CachedNetworkImage(
                             imageUrl: item.bannerUrl,
+                            httpHeaders: KinogoService.imageHeaders,
                             fit: BoxFit.cover,
                             placeholder: (context, url) => Container(
                               color: AppColors.surface,
@@ -700,6 +771,7 @@ class _CinemaScreenState extends State<CinemaScreen> {
                         borderRadius: BorderRadius.circular(18),
                         child: CachedNetworkImage(
                           imageUrl: item.coverUrl,
+                          httpHeaders: KinogoService.imageHeaders,
                           fit: BoxFit.cover,
                           memCacheWidth: 300,
                           memCacheHeight: 450,
@@ -776,69 +848,126 @@ class _CinemaScreenState extends State<CinemaScreen> {
 
 
 
-  Widget _buildSearchResultsGrid() {
-    return GridView.builder(
+  Widget _buildSearchResultsList() {
+    return ListView.builder(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _getCrossAxisCount(context),
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.6,
-      ),
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final item = _searchResults[index];
-        return ScaleButton(
-          scaleFactor: 0.96,
-          onTap: () => _showMovieDetail(item),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl: item.coverUrl,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 300,
-                    memCacheHeight: 450,
-                    placeholder: (context, url) => Container(
-                      color: AppColors.surface,
-                      child: const Center(
-                        child: Icon(Icons.movie_creation_outlined, color: Colors.white10, size: 24),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: ScaleButton(
+            scaleFactor: 0.98,
+            onTap: () => _showMovieDetail(item),
+            child: Container(
+              height: 110,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white.withOpacity(0.04)),
+              ),
+              child: Row(
+                children: [
+                  // Постер фильма
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 70,
+                      height: double.infinity,
+                      child: CachedNetworkImage(
+                        imageUrl: item.coverUrl,
+                        httpHeaders: KinogoService.imageHeaders,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 200,
+                        memCacheHeight: 300,
+                        placeholder: (context, url) => Container(
+                          color: Colors.white.withOpacity(0.05),
+                          child: const Center(
+                            child: Icon(Icons.movie_creation_outlined, color: Colors.white10, size: 24),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.white.withOpacity(0.05),
+                          child: const Icon(Icons.movie_creation_outlined, color: Colors.white24, size: 24),
+                        ),
                       ),
                     ),
-                    errorWidget: (context, url, error) => Container(
-                      color: AppColors.surface,
-                      child: const Icon(Icons.movie_creation_outlined, color: Colors.white24, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  // Информация о фильме
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          item.title,
+                          style: AppText.trackTitle.copyWith(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentGreen.withOpacity(0.18),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                item.type,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.accentGreen,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                            const SizedBox(width: 2),
+                            Text(
+                              item.rating,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              item.year,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.4),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          item.description,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.45),
+                            fontSize: 12,
+                            height: 1.2,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                item.title,
-                style: AppText.trackTitle.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              Row(
-                children: [
-                  const Icon(Icons.star_rounded, color: Colors.amber, size: 10),
-                  const SizedBox(width: 2),
-                  Text(
-                    item.rating,
-                    style: AppText.caption.copyWith(fontSize: 10, color: Colors.white70),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    item.year,
-                    style: AppText.caption.copyWith(fontSize: 10, color: Colors.white38),
-                  ),
+                  const Icon(Icons.chevron_right_rounded, color: Colors.white30, size: 20),
                 ],
-              )
-            ],
+              ),
+            ),
           ),
         );
       },
@@ -846,85 +975,92 @@ class _CinemaScreenState extends State<CinemaScreen> {
   }
 
   Widget _buildSearchContentWrapper() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Результаты поиска",
-                style: AppText.sectionTitle.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isSearchMode = false;
-                    _searchFocusNode.unfocus();
-                    _searchController.clear();
-                  });
-                },
-                child: Text(
-                  "Закрыть",
-                  style: AppText.caption.copyWith(color: AppColors.accentGreen),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _buildSearchResultsGrid(),
-        ),
-      ],
-    );
+    return _buildSearchResultsList();
   }
 
   Widget _buildSearchContent() {
+    final query = _searchController.text.trim();
     Widget child;
-    if (_isLoadingSearch) {
-      child = Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(AppColors.accentGreen),
-        ),
-      );
-    } else if (_searchError != null) {
-      child = Center(
-        child: Text(
-          _searchError!,
-          style: AppText.trackArtist,
-        ),
-      );
-    } else if (_searchResults.isEmpty && _searchController.text.isNotEmpty) {
+
+    if (query.isEmpty) {
       child = Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Iconsax.video_play, size: 64, color: Colors.white24),
+            const Icon(Iconsax.search_status, size: 54, color: Colors.white24),
             const SizedBox(height: 16),
             Text(
-              "Ничего не найдено по запросу",
-              style: AppText.trackArtist.copyWith(color: Colors.white38),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _isSearchMode = false;
-                  _searchFocusNode.unfocus();
-                  _searchController.clear();
-                });
-              },
-              child: Text(
-                "Вернуться назад",
-                style: AppText.trackTitle.copyWith(color: AppColors.accentGreen),
+              "Введите название фильма, сериала или мультфильма",
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: Colors.white38,
+                fontSize: 13,
               ),
-            )
+            ),
+          ],
+        ),
+      );
+    } else if (_isLoadingSearch) {
+      child = Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.accentGreen),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Ищем «$query»...",
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: Colors.white54,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (_searchError != null) {
+      child = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _searchError!,
+            style: const TextStyle(color: Colors.white60, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    } else if (_searchResults.isEmpty) {
+      child = Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Iconsax.video_remove, size: 56, color: Colors.white24),
+            const SizedBox(height: 16),
+            Text(
+              "Ничего не найдено по запросу «$query»",
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                color: Colors.white54,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Проверьте опечатки или введите другое название",
+              style: TextStyle(
+                fontFamily: 'Inter',
+                color: Colors.white30,
+                fontSize: 12,
+              ),
+            ),
           ],
         ),
       );
     } else {
-      child = _buildSearchContentWrapper();
+      child = _buildSearchResultsList();
     }
 
     return KeyedSubtree(
@@ -939,70 +1075,6 @@ class _CinemaScreenState extends State<CinemaScreen> {
       AppPageRoute.create(
         context,
         MovieDetailScreen(movie: item),
-      ),
-    );
-  }
-
-  Widget _buildMediaTabs() {
-    final List<Map<String, String>> tabs = [
-      {"name": "Фильмы", "path": "/films/"},
-      {"name": "Сериалы", "path": "/serialy/"},
-      {"name": "Дорамы", "path": "/doramy/"},
-      {"name": "Аниме", "path": "/anime/"},
-    ];
-
-    return Container(
-      height: 38,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: tabs.length,
-        itemBuilder: (context, index) {
-          final tab = tabs[index];
-          final name = tab["name"]!;
-          final isSelected = _selectedTabType == name;
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ScaleButton(
-              scaleFactor: 0.94,
-              onTap: () {
-                if (isSelected) return;
-                setState(() {
-                  _selectedTabType = name;
-                  _latestMovies = []; // Очищаем карусель на время загрузки
-                });
-                _carouselIndexNotifier.value = 0;
-                _loadTrendingForTab(name);
-                _resetAndLoadMovies();
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.accentGreen : Colors.white.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isSelected ? Colors.transparent : Colors.white.withOpacity(0.06),
-                    width: 1,
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    name,
-                    style: TextStyle(
-                      color: isSelected ? Colors.black87 : Colors.white70,
-                      fontSize: 13,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }

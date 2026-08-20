@@ -4,8 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:ses/core/network/firebase_service.dart';
 import 'package:ses/core/theme/app_theme.dart';
 import 'package:ses/features/player/providers/player_provider.dart';
-import 'package:ses/core/services/update_service.dart';
-import 'package:ses/core/widgets/update_dialog.dart';
 
 class ProfileSheet extends StatefulWidget {
   const ProfileSheet({super.key});
@@ -27,28 +25,6 @@ class ProfileSheet extends StatefulWidget {
 
 class _ProfileSheetState extends State<ProfileSheet> {
   bool _isSigningIn = false;
-  bool _isCheckingUpdate = false;
-
-  Future<void> _handleCheckUpdate() async {
-    setState(() => _isCheckingUpdate = true);
-    try {
-      final updateInfo = await UpdateService.checkForUpdate();
-      if (!mounted) return;
-      if (updateInfo != null && updateInfo.hasUpdate) {
-        UpdateDialog.show(context, updateInfo);
-      } else if (updateInfo != null) {
-        AppTheme.showSnackBar(context, 'У вас актуальная версия (v${updateInfo.currentVersion})');
-      } else {
-        AppTheme.showSnackBar(context, 'Не удалось получить информацию об обновлениях');
-      }
-    } catch (e) {
-      if (mounted) {
-        AppTheme.showSnackBar(context, 'Ошибка проверки обновлений: $e');
-      }
-    } finally {
-      if (mounted) setState(() => _isCheckingUpdate = false);
-    }
-  }
 
   Future<void> _handleGoogleSignIn() async {
     setState(() => _isSigningIn = true);
@@ -226,46 +202,6 @@ class _ProfileSheetState extends State<ProfileSheet> {
                   ],
                 ),
               ),
-              // Check for Updates button
-              GestureDetector(
-                onTap: _isCheckingUpdate ? null : _handleCheckUpdate,
-                child: Container(
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.06)),
-                  ),
-                  child: Center(
-                    child: _isCheckingUpdate
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white70,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.system_update_rounded, color: AppColors.accentBlue, size: 18),
-                              SizedBox(width: 10),
-                              Text(
-                                'Проверить обновления',
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
 
               if (isAnonymous) ...[
                 // Google Login Button

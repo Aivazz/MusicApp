@@ -6,13 +6,19 @@ import 'package:ses/core/network/network_service.dart';
 class KinogoService {
   // Список зеркал Lordfilm (работают без Cloudflare-блокировки)
   static final List<String> mirrors = [
+    'https://www.lordfilm.ae',
+    'https://lordfilm.ae',
+    'https://lordfilm.uno',
     'https://lordfilm.vet',
     'https://lordfilm.tax',
-    'https://lordfilm.uno',
-    'https://lordfilm.life',
   ];
 
   static String currentMirror = mirrors[0];
+
+  static Map<String, String> get imageHeaders => {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Referer": currentMirror,
+  };
 
   // Общие HTTP-заголовки для обхода ботозащиты
   static Map<String, String> get _defaultHeaders => {
@@ -32,11 +38,17 @@ class KinogoService {
           : await NetworkService.get(url, headers: _defaultHeaders);
       
       if (response.statusCode == 200) {
-        return response;
+        // Проверяем, не сбросило ли нас редиректом на главную страницу при поиске
+        final finalUrlStr = response.request?.url.toString() ?? '';
+        if (path.contains('do=search') && !finalUrlStr.contains('story=')) {
+          print("⚠️ Search query stripped on $currentMirror (redirected to $finalUrlStr). Swapping mirror...");
+        } else {
+          return response;
+        }
       }
     } catch (_) {}
 
-    // Если текущее зеркало не ответило, перебираем остальные
+    // Если текущее зеркало не ответило или сбросило поиск, перебираем остальные
     for (final mirror in mirrors) {
       if (mirror == currentMirror) continue;
       try {
@@ -46,6 +58,10 @@ class KinogoService {
             : await NetworkService.get(url, headers: _defaultHeaders);
 
         if (response.statusCode == 200) {
+          final finalUrlStr = response.request?.url.toString() ?? '';
+          if (path.contains('do=search') && !finalUrlStr.contains('story=')) {
+            continue; // Этот зеркальный сервер сбрасывает параметры поиска
+          }
           currentMirror = mirror;
           print("⚡ Switched to working mirror: $currentMirror");
           return response;
@@ -96,16 +112,41 @@ class KinogoService {
     return _parseMoviesFromHtml(response.body);
   }
 
-  /// Поиск фильмов через DLE GET-поиск
+  /// Умный многоуровневый поиск фильмов, сериалов, аниме и мультфильмов
   static Future<List<MovieItem>> searchMovies(String query, {String? tabType}) async {
-    if (query.trim().isEmpty) return [];
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return [];
 
-    final encodedQuery = Uri.encodeComponent(query.trim());
-    final response = await _requestWithFallback(
-      '/index.php?do=search&subaction=search&story=$encodedQuery',
-    );
-    if (response == null) return [];
-    return _parseMoviesFromHtml(response.body);
+    // 1. Пробуем основной GET DLE-поиск
+    try {
+      final encodedQuery = Uri.encodeComponent(cleanQuery);
+      final response = await _requestWithFallback('/index.php?do=search&subaction=search&story=$encodedQuery');
+      if (response != null && response.body.isNotEmpty) {
+        final results = _parseMoviesFromHtml(response.body);
+        if (results.isNotEmpty) return results;
+      }
+    } catch (_) {}
+
+    // 2. Резервный POST DLE-поиск
+    try {
+      final response = await _requestWithFallback(
+        '/index.php?do=search',
+        method: 'POST',
+        body: {
+          'do': 'search',
+          'subaction': 'search',
+          'search_start': '0',
+          'full_search': '0',
+          'result_from': '1',
+          'story': cleanQuery,
+        },
+      );
+      if (response != null && response.body.isNotEmpty) {
+        return _parseMoviesFromHtml(response.body);
+      }
+    } catch (_) {}
+
+    return [];
   }
 
   /// Извлечение ссылки на плеер (iframe) из страницы фильма
@@ -146,8 +187,8 @@ class KinogoService {
     return {};
   }
 
-  /// Комбинированный метод: извлекает плеер, жанр и описание за один запрос
-  static Future<({String? playerUrl, String genre, String description})> getMovieDetailsAndPlayerUrl(String movieUrl) async {
+  /// Комбинированный метод: извлекает плеер, жанр, описание, страну и актеров за один запрос
+  static Future<({String? playerUrl, String genre, String description, String country, List<Map<String, String>> actors})> getMovieDetailsAndPlayerUrl(String movieUrl) async {
     try {
       final headers = {
         ..._defaultHeaders,
@@ -156,21 +197,79 @@ class KinogoService {
 
       final response = await NetworkService.get(Uri.parse(movieUrl), headers: headers);
       if (response.statusCode != 200) {
-        return (playerUrl: null, genre: '', description: '');
+        return (playerUrl: null, genre: '', description: '', country: '', actors: <Map<String, String>>[]);
       }
 
       final playerUrl = _extractPlayerUrlFromHtml(response.body);
       final details = _extractDetailsFromHtml(response.body);
+      final String country = details['country'] ?? '';
+      
+      // Ищем ссылку на TMDB в HTML
+      String? tmdbUrl;
+      final tmdbRegex = RegExp(r'https?://(?:www\.)?themoviedb\.org/(?:movie|tv)/\d+');
+      final match = tmdbRegex.firstMatch(response.body);
+      if (match != null) {
+        tmdbUrl = match.group(0);
+      }
+
+      final List<Map<String, String>> actorsList = [];
+      if (tmdbUrl != null) {
+        try {
+          final tmdbResponse = await NetworkService.get(Uri.parse(tmdbUrl), headers: _defaultHeaders);
+          if (tmdbResponse.statusCode == 200) {
+            final tmdbDoc = hp.parse(tmdbResponse.body);
+            final cards = tmdbDoc.querySelectorAll("li.card");
+            for (final card in cards) {
+              final nameEl = card.querySelector("p a");
+              final characterEl = card.querySelector("p.character");
+              final imgEl = card.querySelector("img");
+              
+              final name = nameEl?.text.trim() ?? "";
+              final character = characterEl?.text.trim() ?? "";
+              final imgSrc = imgEl?.attributes['src'] ?? imgEl?.attributes['data-src'] ?? "";
+              
+              if (name.isNotEmpty) {
+                actorsList.add({
+                  'name': name,
+                  'character': character,
+                  'imageUrl': imgSrc,
+                });
+              }
+              if (actorsList.length >= 15) break;
+            }
+          }
+        } catch (e) {
+          print("Ошибка загрузки актеров с TMDB: $e");
+        }
+      }
+
+      // Если актеры с TMDB не загрузились, парсим текстовый список с Лордфильма
+      if (actorsList.isEmpty && details['actors'] != null) {
+        final names = details['actors']!.split(',');
+        for (final rawName in names) {
+          final name = rawName.trim();
+          if (name.isNotEmpty) {
+            actorsList.add({
+              'name': name,
+              'character': 'Актер',
+              'imageUrl': '',
+            });
+          }
+          if (actorsList.length >= 15) break;
+        }
+      }
 
       return (
         playerUrl: playerUrl,
         genre: details['genre'] ?? '',
         description: details['description'] ?? '',
+        country: country,
+        actors: actorsList,
       );
     } catch (e) {
       print("Ошибка при загрузке деталей и плеера: $e");
     }
-    return (playerUrl: null, genre: '', description: '');
+    return (playerUrl: null, genre: '', description: '', country: '', actors: <Map<String, String>>[]);
   }
 
   /// Извлечение URL плеера из HTML страницы фильма
@@ -230,6 +329,32 @@ class KinogoService {
           final genreText = genreEl.text.trim();
           if (genreText.isNotEmpty) {
             result['genre'] = genreText;
+          }
+        }
+      }
+
+      // Страна: <span class="countries"><a>США</a></span>
+      final countryEl = document.querySelector('.countries');
+      if (countryEl != null) {
+        final countryLinks = countryEl.querySelectorAll('a');
+        if (countryLinks.isNotEmpty) {
+          result['country'] = countryLinks.map((c) => c.text.trim()).join(', ');
+        } else {
+          final countryText = countryEl.text.trim();
+          if (countryText.isNotEmpty) {
+            result['country'] = countryText;
+          }
+        }
+      }
+
+      // В ролях (актеры) из detail-row
+      final detailRows = document.querySelectorAll('.detail-row');
+      for (final row in detailRows) {
+        final spanLabel = row.querySelector('span:first-child');
+        if (spanLabel != null && spanLabel.text.toLowerCase().contains('ролях')) {
+          final spanValue = row.querySelector('span:last-child');
+          if (spanValue != null) {
+            result['actors'] = spanValue.text.trim();
           }
         }
       }
@@ -327,15 +452,28 @@ class KinogoService {
   /// Поддерживает верстку Lordfilm (.item) и Kinogo (.shortstory, .movie)
   static List<MovieItem> _parseMoviesFromHtml(String html) {
     final List<MovieItem> movies = [];
+    final Set<String> seenIds = {};
     try {
       final document = hp.parse(html);
       
-      // Lordfilm использует div.item, Kinogo — div.shortstory или div.movie
-      final cards = document.querySelectorAll(".item.grid-items__item, .shortstory, .movie");
+      // Поддерживаем все вариации карточек Lordfilm, Kinogo и DLE-поиска
+      final cards = document.querySelectorAll(".item, .grid-items__item, .shortstory, .movie, .search-result, .story");
       
       for (var card in cards) {
+        // Пропускаем верхний слайдер/карусель популярных новинок
+        var p = card.parent;
+        bool isCarousel = false;
+        while (p != null) {
+          if (p.className.contains('carou') || p.id.contains('carou')) {
+            isCarousel = true;
+            break;
+          }
+          p = p.parent;
+        }
+        if (isCarousel) continue;
+
         // ── Заголовок и ссылка ──
-        final titleEl = card.querySelector(".item__title, .shortstory__title a, .zagolovki a, .shortstorytitle a");
+        final titleEl = card.querySelector(".item__title, .shortstory__title a, .zagolovki a, .shortstorytitle a, a.expand-link__trg, a[href*='/film/'], a[href*='/series/'], a[href*='/anime/'], a[href*='/multfilm/']");
         if (titleEl == null) continue;
 
         final detailsUrl = titleEl.attributes['href'] ?? '';
@@ -345,20 +483,29 @@ class KinogoService {
         final title = titleEl.text.trim();
         if (title.isEmpty) continue;
 
+        if (seenIds.contains(fullDetailsUrl)) continue;
+        seenIds.add(fullDetailsUrl);
+
         // ── Постер ──
         final imgEl = card.querySelector(".item__img img, .shortstory__poster img, .movie__info-img img, img");
-        String coverUrl = imgEl?.attributes['data-src'] ?? imgEl?.attributes['src'] ?? '';
+        String coverUrl = imgEl?.attributes['data-src'] ?? imgEl?.attributes['src'] ?? imgEl?.attributes['data-original'] ?? '';
         
-        // Пропускаем base64-заглушки (Kinogo lazy-load)
+        // Пропускаем base64-заглушки (Kinogo / Lordfilm lazy-load)
         if (coverUrl.startsWith('data:') || coverUrl.contains('lazy-poster') || coverUrl.isEmpty) {
           final altImg = card.querySelector("img");
           if (altImg != null) {
-            coverUrl = altImg.attributes['data-src'] ?? altImg.attributes['src'] ?? '';
+            coverUrl = altImg.attributes['data-src'] ?? altImg.attributes['src'] ?? altImg.attributes['data-original'] ?? '';
           }
         }
 
-        if (coverUrl.isNotEmpty && !coverUrl.startsWith('http')) {
-          coverUrl = "$currentMirror$coverUrl";
+        if (coverUrl.isNotEmpty) {
+          if (coverUrl.contains('/images/w300/') || coverUrl.contains('/images/w500/') || coverUrl.contains('/images/w185/')) {
+            coverUrl = coverUrl.replaceAll(RegExp(r'^.*?/images/'), 'https://image.tmdb.org/t/p/');
+          } else if (coverUrl.startsWith('//')) {
+            coverUrl = "https:$coverUrl";
+          } else if (!coverUrl.startsWith('http')) {
+            coverUrl = "$currentMirror${coverUrl.startsWith('/') ? '' : '/'}$coverUrl";
+          }
         }
         coverUrl = coverUrl.replaceAll('/thumbs/', '/');
 

@@ -12,8 +12,7 @@ import 'package:ses/features/import_export/widgets/screenshot_import_sheet.dart'
 import 'package:ses/core/widgets/profile_sheet.dart';
 import 'package:ses/core/network/firebase_service.dart';
 import 'package:ses/features/import_export/screens/qr_scan_screen.dart';
-import 'package:ses/core/services/update_service.dart';
-import 'package:ses/core/widgets/update_dialog.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -26,14 +25,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const String _kOcrApiKey = 'K87895432188957';
   late PlayerProvider _playerProvider;
   String _currentVersion = '';
+  bool _isLightTheme = false;
 
   @override
   void initState() {
     super.initState();
     _playerProvider = Provider.of<PlayerProvider>(context, listen: false);
-    UpdateService.getCurrentVersion().then((v) {
-      if (mounted) setState(() => _currentVersion = v);
-    });
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _currentVersion = info.version);
+    }).catchError((_) {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _playerProvider.setShowMiniPlayer(false);
     });
@@ -184,18 +184,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: "Режим приложения",
                       children: [
                         _buildInteractiveTile(
-                          icon: Iconsax.category,
+                          icon: user.appMode == 'cinema' ? Iconsax.video_play : Iconsax.music,
                           title: "Текущий режим",
-                          subtitle: user.appMode == 'music' ? "Музыка" : "Кино",
+                          subtitle: user.appMode == 'cinema' ? "Кино (Фильмы, Сериалы, Дорамы, Аниме)" : "Музыка",
                           onTap: () => _showSelectionBottomSheet<String>(
                             context: context,
-                            title: "Выберите режим",
+                            title: "Режим приложения",
                             options: ['music', 'cinema'],
                             selectedValue: user.appMode,
-                            labelBuilder: (val) => val == 'music' ? "Музыка" : "Кино",
-                            onSelected: (val) {
-                              user.setAppMode(val);
-                            },
+                            labelBuilder: (val) => val == 'cinema' ? 'Кино' : 'Музыка',
+                            onSelected: (val) => user.setAppMode(val),
                           ),
                         ),
                       ],
@@ -373,6 +371,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildSectionGroup(
                       label: "Интерфейс",
                       children: [
+                        _buildSwitchTile(
+                          icon: _isLightTheme ? Iconsax.sun_1 : Iconsax.moon,
+                          title: "Тема оформления",
+                          subtitle: _isLightTheme ? "Светлая тема (заглушка)" : "Темная тема (заглушка)",
+                          value: _isLightTheme,
+                          onChanged: (val) {
+                            setState(() => _isLightTheme = val);
+                            AppTheme.showSnackBar(
+                              context,
+                              val ? "Переключение на светлую тему (заглушка)" : "Переключение на темную тему (заглушка)",
+                            );
+                          },
+                        ),
                         _buildInteractiveTile(
                           icon: Iconsax.repeat,
                           title: "Анимация переходов",
@@ -416,34 +427,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
 
-                    // ── Section: App Info & Updates ──
+                    // ── Section: App Info ──
                     _buildSectionGroup(
                       label: "О приложении",
                       children: [
                         _buildActionTile(
-                          icon: Iconsax.refresh_circle,
-                          title: "Проверить обновления",
+                          icon: Iconsax.info_circle,
+                          title: "Версия приложения",
                           subtitle: _currentVersion.isNotEmpty
-                              ? "Текущая версия v$_currentVersion (GitHub Releases)"
-                              : "Проверить наличие новой версии на GitHub",
-                          onTap: () async {
-                            AppTheme.showSnackBar(context, 'Проверка обновлений...');
-                            final info = await UpdateService.checkForUpdate();
-                            if (!context.mounted) return;
-                            if (info != null && info.hasUpdate) {
-                              UpdateDialog.show(context, info);
-                            } else if (info != null) {
-                              AppTheme.showSnackBar(
-                                context,
-                                'У вас установлена последняя версия (v${info.currentVersion})',
-                              );
-                            } else {
-                              AppTheme.showSnackBar(
-                                context,
-                                'Не удалось получить данные об обновлениях',
-                              );
-                            }
-                          },
+                              ? "v$_currentVersion"
+                              : "v1.0.0",
+                          onTap: () {},
                         ),
                       ],
                     ),

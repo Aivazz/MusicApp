@@ -40,8 +40,19 @@ class _UpdateDialogState extends State<UpdateDialog> {
     if (mounted) setState(() {});
   }
 
-  void _startUpdate() {
+  void _startUpdate() async {
     final downloadUrl = widget.updateInfo.downloadUrl;
+    final progressState = UpdateService.downloadNotifier.value;
+
+    // Если файл скачан и готов к установке — напрямую запускаем нативную установку
+    if (progressState?.isReadyToInstall == true) {
+      final installed = await UpdateService.installDownloadedApk();
+      if (!installed) {
+        UpdateService.startBackgroundDownload(widget.updateInfo);
+      }
+      return;
+    }
+
     if (downloadUrl == null || downloadUrl.isEmpty || !Platform.isAndroid) {
       UpdateService.openReleasePage(widget.updateInfo.htmlUrl);
       if (mounted) Navigator.of(context).pop();
@@ -56,6 +67,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
     final info = widget.updateInfo;
     final progressState = UpdateService.downloadNotifier.value;
     final isDownloading = progressState?.isDownloading ?? false;
+    final isReadyToInstall = progressState?.isReadyToInstall ?? false;
+    final hasError = progressState?.error != null;
     final progress = progressState?.progress ?? 0.0;
     final statusText = progressState?.statusText ?? 'Начало скачивания...';
 
@@ -67,10 +80,6 @@ class _UpdateDialogState extends State<UpdateDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFF1C1C1E),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.08),
-            width: 1,
-          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.5),
@@ -91,12 +100,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: AppColors.accentBlue.withValues(alpha: 0.15),
+                    color: (info.hasUpdate ? AppColors.accentBlue : const Color(0xFF34C759)).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(
-                    Icons.system_update_rounded,
-                    color: AppColors.accentBlue,
+                  child: Icon(
+                    info.hasUpdate ? Icons.arrow_downward_rounded : Icons.check_circle_rounded,
+                    color: info.hasUpdate ? AppColors.accentBlue : const Color(0xFF34C759),
                     size: 24,
                   ),
                 ),
@@ -105,9 +114,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Обновление',
-                        style: TextStyle(
+                      Text(
+                        info.hasUpdate ? 'Обновление' : 'Обновлений не найдено',
+                        style: const TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -116,12 +125,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'v${info.currentVersion} → v${info.latestVersion}',
-                        style: const TextStyle(
+                        info.hasUpdate
+                            ? 'v${info.currentVersion} → v${info.latestVersion}'
+                            : 'У вас установлена последняя версия (v${info.currentVersion})',
+                        style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.accentBlue,
+                          color: info.hasUpdate ? AppColors.accentBlue : const Color(0xFF34C759),
                         ),
                       ),
                     ],
@@ -131,34 +142,58 @@ class _UpdateDialogState extends State<UpdateDialog> {
             ),
             const SizedBox(height: 16),
 
-            // Список изменений (Changelog)
-            if (info.releaseNotes.isNotEmpty) ...[
-              Container(
-                constraints: const BoxConstraints(maxHeight: 140),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Text(
-                    info.releaseNotes,
-                    style: const TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 13,
-                      color: Colors.white70,
-                      height: 1.35,
-                    ),
+            // Информация / Changelog
+            Container(
+              constraints: const BoxConstraints(maxHeight: 140),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              padding: const EdgeInsets.all(12),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Text(
+                  info.hasUpdate
+                      ? (hasError
+                          ? 'Ошибка установки: ${progressState!.error}'
+                          : (isReadyToInstall
+                              ? 'Файл обновления скачан. Нажмите «Обновить» для повторного запуска установки.'
+                              : info.releaseNotes))
+                      : 'У вас установлена самая свежая версия приложения (v${info.currentVersion}).',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    color: hasError ? Colors.redAccent : Colors.white70,
+                    height: 1.35,
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-            ],
+            ),
+            const SizedBox(height: 20),
 
-            // Индикатор загрузки или кнопки
-            if (isDownloading) ...[
+            // Кнопки управления
+            if (!info.hasUpdate) ...[
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accentBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Отлично',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ] else if (isDownloading) ...[
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -242,14 +277,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.download_rounded, size: 18),
-                          SizedBox(width: 6),
+                          const Icon(Icons.arrow_downward_rounded, size: 18),
+                          const SizedBox(width: 6),
                           Text(
-                            'Обновить',
-                            style: TextStyle(
+                            isReadyToInstall ? 'Повторить' : 'Обновить',
+                            style: const TextStyle(
                               fontFamily: 'Inter',
                               fontSize: 14,
                               fontWeight: FontWeight.bold,

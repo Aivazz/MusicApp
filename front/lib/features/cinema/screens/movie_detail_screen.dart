@@ -10,6 +10,7 @@ import 'package:ses/features/cinema/screens/custom_video_player_screen.dart';
 import 'package:ses/features/cinema/screens/translation_selection_screen.dart';
 import 'package:ses/features/cinema/models/movie_item.dart';
 import 'package:ses/features/cinema/services/kinogo_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:ses/core/theme/app_theme.dart';
 import 'package:ses/core/widgets/scale_button.dart';
 
@@ -40,6 +41,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> with SingleTicker
   // Жанр и описание, подгружаемые со страницы деталей
   late String _genre;
   late String _description;
+  String? _country;
+  List<Map<String, String>> _actors = [];
 
   late AnimationController _pulseController;
 
@@ -97,6 +100,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> with SingleTicker
           if (result.description.isNotEmpty) {
             _description = result.description;
           }
+          if (result.country.isNotEmpty) {
+            _country = result.country;
+          }
+          _actors = result.actors;
 
           if (result.playerUrl != null && result.playerUrl!.isNotEmpty) {
             _playerUrl = result.playerUrl;
@@ -271,7 +278,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> with SingleTicker
                                 )
                               ],
                               image: DecorationImage(
-                                image: NetworkImage(widget.movie.coverUrl),
+                                image: CachedNetworkImageProvider(
+                                  widget.movie.coverUrl,
+                                  headers: KinogoService.imageHeaders,
+                                ),
                                 fit: BoxFit.cover,
                               ),
                             ),
@@ -410,7 +420,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> with SingleTicker
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     child: Column(
                       children: [
-                        _buildMetaItem(Iconsax.global, "Страна", widget.movie.country),
+                        _buildMetaItem(Iconsax.global, "Страна", _country ?? widget.movie.country),
                         _buildMetaItem(Iconsax.calendar, "Год выпуска", "${widget.movie.year} г."),
                         _buildMetaItem(Iconsax.video_play, "Тип релиза", widget.movie.type),
                         _buildMetaItem(Iconsax.star, "Жанр", _genre),
@@ -418,6 +428,119 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> with SingleTicker
                     ),
                   ),
                 ),
+
+                // 8. АКТЕРЫ (Фотографии и имена)
+                if (_actors.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Актёры",
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    AppPageRoute.create(
+                                      context,
+                                      ActorsListScreen(
+                                        movieTitle: widget.movie.title,
+                                        actors: _actors,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Text(
+                                  "Все",
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white.withOpacity(0.5),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 125,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: _actors.length,
+                              itemBuilder: (context, index) {
+                                 final actor = _actors[index];
+                                 final name = actor['name'] ?? '';
+                                 final imageUrl = actor['imageUrl'] ?? '';
+                                
+                                return Container(
+                                  width: 80,
+                                  margin: const EdgeInsets.only(right: 12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      // Фото актера (квадратное закругленное)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                          width: 64,
+                                          height: 64,
+                                          color: Colors.white.withOpacity(0.05),
+                                          child: imageUrl.isNotEmpty
+                                              ? CachedNetworkImage(
+                                                  imageUrl: imageUrl,
+                                                  fit: BoxFit.cover,
+                                                  placeholder: (context, url) => const Center(
+                                                    child: SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 1.5,
+                                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  errorWidget: (context, url, error) => _buildActorPlaceholder(name),
+                                                )
+                                              : _buildActorPlaceholder(name),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Имя актера
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white70,
+                                        ),
+                                        maxLines: 2,
+                                        textAlign: TextAlign.center,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                 // 9. ОПИСАНИЕ С РАСКРЫТИЕМ (Подробнее...)
                 SliverToBoxAdapter(
@@ -683,4 +806,210 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> with SingleTicker
 
 
 
+  Widget _buildActorPlaceholder(String name) {
+    final cleanName = name.trim();
+    String initials = "";
+    if (cleanName.isNotEmpty) {
+      final parts = cleanName.split(' ');
+      if (parts.length >= 2) {
+        initials = parts[0].substring(0, 1).toUpperCase() + parts[1].substring(0, 1).toUpperCase();
+      } else if (parts.isNotEmpty) {
+        initials = parts[0].substring(0, 1).toUpperCase();
+      }
+    }
+    return Center(
+      child: Text(
+        initials.isNotEmpty ? initials : "?",
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.white38,
+          fontFamily: 'Inter',
+        ),
+      ),
+    );
+  }
+
+}
+
+class ActorsListScreen extends StatelessWidget {
+  final String movieTitle;
+  final List<Map<String, String>> actors;
+
+  const ActorsListScreen({
+    Key? key,
+    required this.movieTitle,
+    required this.actors,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Шапка экрана
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+              child: Row(
+                children: [
+                  ScaleButton(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withOpacity(0.08), width: 1),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Актёрский состав",
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          movieTitle,
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 12,
+                            color: Colors.white.withOpacity(0.5),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Сетка актеров
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                physics: const BouncingScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 20,
+                  childAspectRatio: 0.72,
+                ),
+                itemCount: actors.length,
+                itemBuilder: (context, index) {
+                  final actor = actors[index];
+                  final name = actor['name'] ?? '';
+                  final character = actor['character'] ?? '';
+                  final imageUrl = actor['imageUrl'] ?? '';
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Фото актера (квадратное закругленное)
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: Container(
+                              color: Colors.white.withOpacity(0.05),
+                              child: imageUrl.isNotEmpty
+                                  ? CachedNetworkImage(
+                                      imageUrl: imageUrl,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => const Center(
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white30),
+                                          ),
+                                        ),
+                                      ),
+                                      errorWidget: (context, url, error) => _buildActorPlaceholder(name),
+                                    )
+                                  : _buildActorPlaceholder(name),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Имя актера
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      // Роль актера
+                      Text(
+                        character.isNotEmpty ? character : 'Актёр',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 10,
+                          color: Colors.white.withOpacity(0.45),
+                        ),
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActorPlaceholder(String name) {
+    final cleanName = name.trim();
+    String initials = "";
+    if (cleanName.isNotEmpty) {
+      final parts = cleanName.split(' ');
+      if (parts.length >= 2) {
+        initials = parts[0].substring(0, 1).toUpperCase() + parts[1].substring(0, 1).toUpperCase();
+      } else if (parts.isNotEmpty) {
+        initials = parts[0].substring(0, 1).toUpperCase();
+      }
+    }
+    return Center(
+      child: Text(
+        initials.isNotEmpty ? initials : "?",
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.white38,
+          fontFamily: 'Inter',
+        ),
+      ),
+    );
+  }
 }

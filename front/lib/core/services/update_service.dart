@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:ota_update/ota_update.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -48,11 +50,34 @@ class UpdateDownloadProgress {
 class UpdateService {
   static String githubOwner = 'Aivazz';
   static String githubRepo = 'MusicApp';
+  static const MethodChannel _installChannel = MethodChannel('com.example.ses/install');
 
   // Фоновый прогресс скачивания обновления
   static final ValueNotifier<UpdateDownloadProgress?> downloadNotifier = ValueNotifier(null);
   static StreamSubscription<OtaEvent>? _activeOtaSubscription;
   static UpdateInfo? activeUpdateInfo;
+
+  /// Запускает нативную установку скачанного APK файла через FileProvider
+  static Future<bool> installDownloadedApk() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final dir = await getExternalStorageDirectory();
+      if (dir != null) {
+        final apkFile = File('${dir.path}/ses-music-update.apk');
+        if (await apkFile.exists()) {
+          final bool? result = await _installChannel.invokeMethod<bool>('installApk', {
+            'filePath': apkFile.path,
+          });
+          return result ?? false;
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Ошибка вызова нативной установки APK: $e');
+      }
+    }
+    return false;
+  }
 
   /// Запуск скачивания в фоновом режиме
   static void startBackgroundDownload(UpdateInfo info) {
@@ -84,9 +109,10 @@ class UpdateService {
               break;
             case OtaStatus.INSTALLING:
               p = 1.0;
-              st = 'Установка обновления...';
+              st = 'Запуск установки...';
               downloading = false;
               ready = true;
+              installDownloadedApk();
               break;
             case OtaStatus.ALREADY_RUNNING_ERROR:
               st = 'Загрузка уже выполняется';
@@ -291,6 +317,17 @@ class UpdateService {
       return await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
     return false;
+  }
+
+  static Future<bool> openDownloadUrl(UpdateInfo info) async {
+    final url = (info.downloadUrl != null && info.downloadUrl!.isNotEmpty)
+        ? info.downloadUrl!
+        : info.htmlUrl;
+    return openReleasePage(url);
+  }
+
+  static void resetDownloadNotifier() {
+    downloadNotifier.value = null;
   }
 
   static String _cleanVersion(String version) {

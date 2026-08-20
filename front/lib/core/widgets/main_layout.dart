@@ -11,8 +11,6 @@ import 'package:ses/features/library/screens/settings_screen.dart';
 import 'package:ses/core/widgets/profile_sheet.dart';
 import 'package:ses/features/auth/providers/user_provider.dart';
 import 'package:ses/features/cinema/screens/cinema_screen.dart';
-import 'package:ses/core/services/update_service.dart';
-import 'package:ses/core/widgets/update_dialog.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -40,17 +38,6 @@ class _MainLayoutState extends State<MainLayout> with TickerProviderStateMixin, 
       duration: const Duration(milliseconds: 300),
       value: initialMode == 'music' ? 0.0 : 1.0,
     );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkForAppUpdate();
-    });
-  }
-
-  Future<void> _checkForAppUpdate() async {
-    final updateInfo = await UpdateService.checkForUpdate();
-    if (updateInfo != null && updateInfo.hasUpdate && mounted) {
-      UpdateDialog.show(context, updateInfo);
-    }
   }
 
   @override
